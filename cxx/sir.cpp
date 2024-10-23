@@ -31,6 +31,8 @@ int main(int argc, char *argv[]) {
 	auto run = 0u;
 
 	output_file << "r,t,S,I,R" << std::endl;
+	std::default_random_engine generator(42);
+	std::uniform_real_distribution<float> unif(0, 1);
 	while(std::getline(param_file, line)) {
 		// Read in parameters
 		std::istringstream iss(line);
@@ -46,7 +48,6 @@ int main(int argc, char *argv[]) {
 		for (int i = 0; i < std::floor(I0 * N); i++) {
 			population[i] = State::I;
 		}
-		std::default_random_engine generator(42);
 
 		auto dt = .1;
 		auto tmax = 100.;
@@ -84,16 +85,14 @@ int main(int argc, char *argv[]) {
 			for (auto i = 0u; i < N; ++i) {
 				// Sample population to infect
 				if (population[i] == State::S) {
-					std::uniform_real_distribution<float> distribution(0, 1);
-					if (distribution(generator) < foi) {
+					if (unif(generator) < foi) {
 						to_infect.push_back(i);
 					}
 				}
 
 				// Sample population to recover
 				if (population[i] == State::I) {
-					std::uniform_real_distribution<float> distribution(0, 1);
-					if (distribution(generator) < gamma * dt) {
+					if (unif(generator) < gamma * dt) {
 						to_recover.push_back(i);
 					}
 				}
