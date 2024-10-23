@@ -6,6 +6,7 @@ from jax import numpy as jnp, random, vmap, jit, default_device, devices
 from jax.lax import scan
 from jaxtyping import Array
 from jax.tree_util import register_pytree_node
+from jax import debug
 
 # Read in command line arguments
 N = int(sys.argv[1])
@@ -44,13 +45,12 @@ register_pytree_node(
     lambda _, args: Observation(*args)
 )
 
-def init(infected: float, n: int) -> State:
-    n_infected = jnp.array(n * infected, int)
-    susceptible = (jnp.arange(n) < n_infected).astype(int)
+def init(infected: int, n: int) -> State:
+    susceptible = (jnp.arange(n) > infected).astype(int)
     return State(
         susceptible,
         1 - susceptible,
-        jnp.zeros((n,))
+        jnp.zeros((n,), dtype=int)
     )
 
 def step(
@@ -61,7 +61,7 @@ def step(
     ) -> State:
 
     # calculate force of infection
-    foi = beta * jnp.sum(state.infected) / N
+    foi = beta * jnp.sum(state.infected) / N * dt
 
     # sample infections
     key, key_i = random.split(key)
@@ -69,7 +69,7 @@ def step(
 
     # sample recoveries
     key, key_i = random.split(key)
-    new_recoveries = bernoulli(key_i, state.infected * gamma, (N,))
+    new_recoveries = bernoulli(key_i, state.infected * gamma * dt, (N,))
 
     # make new state
     return State(
@@ -96,7 +96,7 @@ def _scan_step(
 
 def run(
     key: Any,
-    infected: float,
+    infected: int,
     beta: float,
     gamma: float,
     ) -> Observation:
@@ -104,22 +104,27 @@ def run(
     _, obs = scan(
         f = lambda s, k: _scan_step(k, beta, gamma, s),
         init = state,
-        xs = random.split(key, timesteps),
-        length = timesteps
+        xs = random.split(key, timesteps - 1),
+        length = timesteps - 1
     )
-    return obs
+    init_obs = observe(state)
+    return Observation(
+        jnp.concatenate([jnp.atleast_1d(init_obs.n_susceptible), obs.n_susceptible]),
+        jnp.concatenate([jnp.atleast_1d(init_obs.n_infected), obs.n_infected]),
+        jnp.concatenate([jnp.atleast_1d(init_obs.n_recovered), obs.n_recovered])
+    )
 
 if __name__ == '__main__':
 
     # Read in parameters into jnp arrays
     with open(parameters, 'r') as f:
         reader = csv.reader(f)
-        R0, I0, gamma = zip(*[
+        I0, R0, gamma = zip(*[
             (float(row[0]), float(row[1]), float(row[2]))
             for row in reader
         ])
-        R0 = jnp.round(N * jnp.array(R0))
         I0 = jnp.round(N * jnp.array(I0))
+        R0 = jnp.array(R0)
         gamma = jnp.array(gamma)
 
     outputs = []
@@ -146,7 +151,16 @@ if __name__ == '__main__':
         outputs.n_infected.reshape(-1),
         outputs.n_recovered.reshape(-1)
     ]).T
+
+    # Add run and timestep indices
+    outputs = jnp.hstack([
+        jnp.repeat(jnp.arange(len(I0)), timesteps)[:,None],
+        jnp.tile(jnp.arange(timesteps), len(I0))[:,None],
+        outputs
+    ])
+
+    # Save output
     with open(output_file, 'w') as f:
         writer = csv.writer(f)
-        writer.writerow(['Susceptible', 'Infected', 'Removed'])
+        writer.writerow(["run", "t", "S", "I", "R"])
         writer.writerows(outputs)

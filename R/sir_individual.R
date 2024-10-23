@@ -38,10 +38,9 @@ recovery_process <- function(t){
 for (i in 1:nrow(parameters)) {
     # Initialise model arguments from parameter set
     p$I0 <- round(parameters[[i,'I0']] * N)
-    
+    p$R0 <- parameters[[i,'R0']]
     p$gamma <- parameters[[i,'gamma']]
-    p$R0 <- round(parameters[[i,'R0']] * N)
-    p$S0 <- N - p$I0 - p$R0
+    p$S0 <- N - p$I0
     p$beta <- p$R0 * p$gamma
     health_states_t0 <- rep("S",N)
     health_states_t0[sample.int(n = N,size = p$I0)] <- "I"
@@ -68,7 +67,7 @@ for (i in 1:nrow(parameters)) {
 
 # Write health dataframe to file
 write.table(
-    output,
+    output[,c("run","timestep","S_count","I_count","R_count")],
     file = output_file,
     sep = ",",
     row.names = FALSE,
