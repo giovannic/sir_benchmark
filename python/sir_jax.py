@@ -6,7 +6,6 @@ from jax import numpy as jnp, random, vmap, jit, default_device, devices
 from jax.lax import scan
 from jaxtyping import Array
 from jax.tree_util import register_pytree_node
-from jax import debug
 
 # Read in command line arguments
 N = int(sys.argv[1])
@@ -17,9 +16,6 @@ use_gpu = int(sys.argv[4])
 # Add some static args
 dt = .1
 timesteps = int(100. / dt)
-
-def bernoulli(key: Any, rate: Array, shape: Tuple) -> Array:
-    return random.bernoulli(key, rate, shape)
 
 @dataclass
 class State:
@@ -65,17 +61,19 @@ def step(
 
     # sample infections
     key, key_i = random.split(key)
-    new_infections = bernoulli(key_i, state.susceptible * foi, (N,))
+    r = random.uniform(key_i, shape=(N,))
+    new_infections = state.susceptible & (r < foi)
 
     # sample recoveries
     key, key_i = random.split(key)
-    new_recoveries = bernoulli(key_i, state.infected * gamma * dt, (N,))
+    r = random.uniform(key_i, shape=(N,))
+    new_recoveries = state.infected & (r < (gamma * dt))
 
     # make new state
     return State(
-        state.susceptible - new_infections,
-        state.infected - new_recoveries + new_infections,
-        state.recovered + new_recoveries
+        state.susceptible & ~new_infections,
+        (state.infected & ~new_recoveries) | new_infections,
+        state.recovered | new_recoveries
     )
 
 def observe(state: State) -> Observation:
@@ -141,7 +139,7 @@ if __name__ == '__main__':
         ))(
             random.split(random.PRNGKey(0), len(I0)),
             I0,
-            R0,
+            R0 * gamma,
             gamma,
         )
 
